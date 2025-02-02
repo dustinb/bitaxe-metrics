@@ -29,7 +29,7 @@ type Info struct {
 	Hostname          string  `json:"hostname"`
 	MacAddr           string  `json:"macAddr"`
 	OverHeatMode      bool    `json:"overheat_mode"`
-	Power             int     `json:"power"`
+	Power             float64 `json:"power"`
 	SharesAccepted    int     `json:"sharesAccepted"`
 	SharesRejected    int     `json:"sharesRejected"`
 	SmallCoreCount    int     `json:"smallCoreCount"`
@@ -64,7 +64,7 @@ func GetSystemInfo(ip string) Info {
 
 // ScanNetwork scans the network for the Bitaxe
 func ScanNetwork() []Bitaxe {
-	var bitaxes []Bitaxe
+	var bitaxes = make(map[string]Bitaxe)
 	var mutex sync.Mutex
 	var waitgroup sync.WaitGroup
 
@@ -93,12 +93,16 @@ func ScanNetwork() []Bitaxe {
 					log.Printf("Found Bitaxe: %s %s", ip, info.Hostname)
 					bitaxe := Bitaxe{IP: ip, Hostname: info.Hostname, MacAddr: info.MacAddr}
 					mutex.Lock()
-					bitaxes = append(bitaxes, bitaxe)
+					bitaxes[bitaxe.IP] = bitaxe
 					mutex.Unlock()
 				}
 			}()
 		}
 	}
 	waitgroup.Wait()
-	return bitaxes
+	var result []Bitaxe
+	for _, bitaxe := range bitaxes {
+		result = append(result, bitaxe)
+	}
+	return result
 }

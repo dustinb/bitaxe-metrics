@@ -1,51 +1,44 @@
 package main
 
 import (
+	"fmt"
 	"log"
-	"net/http"
+	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"oldbute.com/bitaxe-metrics/lib"
 )
 
-type metrics struct {
-	coreVoltage    *prometheus.GaugeVec
-	frequency      *prometheus.GaugeVec
-	hashRate       *prometheus.GaugeVec
-	sharesAccepted *prometheus.GaugeVec
-	sharesRejected *prometheus.GaugeVec
-	temp           *prometheus.GaugeVec
-	vrTemp         *prometheus.GaugeVec
-}
+const metricsPollInterval = 10 * time.Second
+const scanNetworkInterval = 10 * time.Minute
 
 func main() {
-	reg := prometheus.NewRegistry()
 
-	metrics := NewMetrics(reg)
-	go func() {
-		http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
-		log.Fatal(http.ListenAndServe(":8077", nil))
-	}()
+	lib.StartMetrics()
 
 	bitaxes := lib.ScanNetwork()
 	log.Printf("Found %d bitaxes", len(bitaxes))
 
 	// Update metrics every x seconds
-	metricsPoll := time.NewTicker(10 * time.Second)
+	metricsPoll := time.NewTicker(metricsPollInterval)
 
-	// Scan the network every x minutes (DHCP leases or new Bitaxes)
-	scanNetwork := time.NewTicker(10 * time.Minute)
+	// Scan the network every x minutes (DHCP leases or new/removed Bitaxes)
+	scanNetwork := time.NewTicker(scanNetworkInterval)
 
 	// Force a scan of the network
 	forceScan := make(chan time.Time)
+
+	// Track averages over time
+	var avgMutex sync.Mutex
+	var averages = make(map[string]lib.Average)
+	for _, bitaxe := range bitaxes {
+		averages[bitaxe.MacAddr] = lib.Average{}
+	}
 
 	log.Printf("Starting main loop")
 	for {
 		select {
 		case <-metricsPoll.C:
-			log.Printf("Metrics poll tick")
 			for _, bitaxe := range bitaxes {
 				go func(bitaxe lib.Bitaxe) {
 					info := lib.GetSystemInfo(bitaxe.IP)
@@ -59,64 +52,52 @@ func main() {
 						return
 					}
 
-					metrics.coreVoltage.WithLabelValues(bitaxe.Hostname).Set(float64(info.CoreVoltage))
-					metrics.hashRate.WithLabelValues(bitaxe.Hostname).Set(info.HashRate)
-					metrics.frequency.WithLabelValues(bitaxe.Hostname).Set(float64(info.Frequency))
-					metrics.sharesAccepted.WithLabelValues(bitaxe.Hostname).Set(float64(info.SharesAccepted))
-					metrics.sharesRejected.WithLabelValues(bitaxe.Hostname).Set(float64(info.SharesRejected))
-					metrics.temp.WithLabelValues(bitaxe.Hostname).Set(info.Temp)
-					metrics.vrTemp.WithLabelValues(bitaxe.Hostname).Set(info.VRTemp)
+					// Store the metrics
+					lib.Measure(bitaxe.Hostname, info)
+
+					// Calculate the score
+					T := lib.TemperatureScore(info)
+					H := lib.HashRateScore(info)
+					E := lib.EfficiencyScore(info)
+					score := T*0.1 + H*0.6 + E*0.3
+
+					// Update the averages
+					avgMutex.Lock()
+					average := averages[bitaxe.MacAddr]
+					average.Score += score
+					average.Efficiency += info.Power / (info.HashRate / 1000)
+					average.HashRate += info.HashRate
+					average.Temp += info.Temp
+					average.Count++
+					averages[bitaxe.MacAddr] = average
+					avgMutex.Unlock()
+
+					fmt.Printf("%s: %dMHz %d\n", bitaxe.Hostname, info.Frequency, info.CoreVoltage)
+					fmt.Printf("Score: T: %f H: %f E: %f\n", T, H, E)
+					fmt.Printf("Value: T: %f H: %f E: %f\n", info.Temp, info.HashRate, info.Power/(info.HashRate/1000))
+					fmt.Printf("Avg  : T: %f H: %f E: %f S: %f\n\n", average.Temp/average.Count, average.HashRate/average.Count, average.Efficiency/average.Count, average.Score/average.Count)
+
 				}(bitaxe)
 			}
 		case <-scanNetwork.C:
+			metricsPoll.Stop()
 			log.Printf("Network scan tick")
 			bitaxes = lib.ScanNetwork()
+
+			for _, bitaxe := range bitaxes {
+				if _, ok := averages[bitaxe.MacAddr]; !ok {
+					averages[bitaxe.MacAddr] = lib.Average{}
+				}
+			}
+
 			log.Printf("Found %d bitaxes", len(bitaxes))
+			metricsPoll = time.NewTicker(metricsPollInterval)
 		case <-forceScan:
+			metricsPoll.Stop()
 			log.Printf("Force scan tick")
 			bitaxes = lib.ScanNetwork()
 			log.Printf("Found %d bitaxes", len(bitaxes))
+			metricsPoll = time.NewTicker(metricsPollInterval)
 		}
 	}
-}
-
-func NewMetrics(reg prometheus.Registerer) *metrics {
-	m := &metrics{
-		coreVoltage: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "core_voltage",
-			Help: "Voltage of the ASICcore in Volts",
-		}, []string{"hostname"}),
-		frequency: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "frequency",
-			Help: "Frequency of the ASIC in MHz",
-		}, []string{"hostname"}),
-		hashRate: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "hash_rate",
-			Help: "Current hash rate as Gh/s",
-		}, []string{"hostname"}),
-		sharesAccepted: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "shares_accepted",
-			Help: "Number of shares accepted",
-		}, []string{"hostname"}),
-		sharesRejected: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "shares_rejected",
-			Help: "Number of shares rejected",
-		}, []string{"hostname"}),
-		temp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "asic_temperature_celsius",
-			Help: "Current temperature of the ASIC.",
-		}, []string{"hostname"}),
-		vrTemp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "vr_temperature_celsius",
-			Help: "Current temperature of the voltage regulator.",
-		}, []string{"hostname"}),
-	}
-	reg.MustRegister(m.coreVoltage)
-	reg.MustRegister(m.temp)
-	reg.MustRegister(m.frequency)
-	reg.MustRegister(m.hashRate)
-	reg.MustRegister(m.sharesAccepted)
-	reg.MustRegister(m.sharesRejected)
-	reg.MustRegister(m.vrTemp)
-	return m
 }
