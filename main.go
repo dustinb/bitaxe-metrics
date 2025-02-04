@@ -19,6 +19,9 @@ func main() {
 	bitaxes := lib.ScanNetwork()
 	log.Printf("Found %d bitaxes", len(bitaxes))
 
+	// Create the Hash Rate dashboard
+	lib.CreateDashboard(bitaxes)
+
 	// Update metrics every x seconds
 	metricsPoll := time.NewTicker(metricsPollInterval)
 
