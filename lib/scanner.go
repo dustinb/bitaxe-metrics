@@ -51,7 +51,7 @@ const DHCP_END = 254
 
 func GetSystemInfo(ip string) Info {
 	client := http.Client{}
-	client.Timeout = 2 * time.Second
+	client.Timeout = 5 * time.Second
 	resp, err := client.Get("http://" + ip + "/api/system/info")
 	if err != nil {
 		return Info{}

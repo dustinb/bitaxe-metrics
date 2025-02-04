@@ -32,13 +32,7 @@ go run main.go
 
 # Grafana Graphs
 
-The default login for Grafana is admin/admin at http://localhost:3000.  I use 2 queries to visualize hash rate and expected hash rate for each Bitaxe smoothed averaged over a 20 minute period.
-
-
-```
-avg_over_time(hash_rate{hostname="gamma_bm_led3"}[20m])
-expected_hash_rate{hostname="gamma_bm_led3"}
-```
+The default login for Grafana is admin/admin at http://localhost:3000.  There are 2 dashboards created by default with some example graphs.
 
 ![Grafana Graph](./image.png)
 

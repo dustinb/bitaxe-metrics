@@ -3,6 +3,7 @@ package lib
 import (
 	"log"
 	"net/http"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -16,18 +17,26 @@ type prometheusMetrics struct {
 	frequency          *prometheus.GaugeVec
 	hashRate           *prometheus.GaugeVec
 	power              *prometheus.GaugeVec
-	sharesAccepted     *prometheus.GaugeVec
-	sharesRejected     *prometheus.GaugeVec
+	sharesAccepted     *prometheus.CounterVec
+	sharesRejected     *prometheus.CounterVec
 	temp               *prometheus.GaugeVec
 	vrTemp             *prometheus.GaugeVec
 }
 
 var metrics *prometheusMetrics
 
+// Store previous shares accepted and rejected for each Bitaxe
+var sharesMutex sync.Mutex
+var sharesAcceptedLast map[string]int
+var sharesRejectedLast map[string]int
+
 func StartMetrics() {
 	reg := prometheus.NewRegistry()
 
 	metrics = newMetrics(reg)
+
+	sharesAcceptedLast = make(map[string]int)
+	sharesRejectedLast = make(map[string]int)
 
 	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
 	go func() {
@@ -44,10 +53,30 @@ func Measure(hostname string, info Info) {
 	metrics.expectedEfficiency.WithLabelValues(hostname).Set(info.Power / (ExpectedHashRate(info) / 1000))
 	metrics.frequency.WithLabelValues(hostname).Set(float64(info.Frequency))
 	metrics.power.WithLabelValues(hostname).Set(info.Power)
-	metrics.sharesAccepted.WithLabelValues(hostname).Set(float64(info.SharesAccepted))
-	metrics.sharesRejected.WithLabelValues(hostname).Set(float64(info.SharesRejected))
 	metrics.temp.WithLabelValues(hostname).Set(info.Temp)
 	metrics.vrTemp.WithLabelValues(hostname).Set(info.VRTemp)
+
+	sharesMutex.Lock()
+	defer sharesMutex.Unlock()
+
+	if _, ok := sharesAcceptedLast[info.MacAddr]; !ok {
+		sharesAcceptedLast[info.MacAddr] = info.SharesAccepted
+	} else {
+		for i := 0; i < info.SharesAccepted-sharesAcceptedLast[info.MacAddr]; i++ {
+			metrics.sharesAccepted.WithLabelValues(hostname).Inc()
+		}
+		sharesAcceptedLast[info.MacAddr] = info.SharesAccepted
+	}
+
+	if _, ok := sharesRejectedLast[info.MacAddr]; !ok {
+		sharesRejectedLast[info.MacAddr] = info.SharesRejected
+	} else {
+		for i := 0; i < info.SharesRejected-sharesRejectedLast[info.MacAddr]; i++ {
+			metrics.sharesRejected.WithLabelValues(hostname).Inc()
+		}
+		sharesRejectedLast[info.MacAddr] = info.SharesRejected
+	}
+
 }
 
 func newMetrics(reg prometheus.Registerer) *prometheusMetrics {
@@ -80,11 +109,11 @@ func newMetrics(reg prometheus.Registerer) *prometheusMetrics {
 			Name: "power",
 			Help: "Power consumption in Watts",
 		}, []string{"hostname"}),
-		sharesAccepted: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		sharesAccepted: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "shares_accepted",
 			Help: "Number of shares accepted",
 		}, []string{"hostname"}),
-		sharesRejected: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		sharesRejected: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "shares_rejected",
 			Help: "Number of shares rejected",
 		}, []string{"hostname"}),
