@@ -2,3 +2,4 @@ vendor
 prometheus_data
 grafana_data
 grafana/dashboards/hash_rate.json
+config.db

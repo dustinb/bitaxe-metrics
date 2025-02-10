@@ -56,6 +56,11 @@ func main() {
 						return
 					}
 
+					// Ramp up measurements
+					if info.Temp < 1 || info.HashRate < 1 {
+						return
+					}
+
 					// Store the metrics
 					lib.Measure(bitaxe.Hostname, info)
 
@@ -76,6 +81,7 @@ func main() {
 					if _, ok := averages[configKey]; !ok {
 						averages[configKey] = lib.Config{}
 					}
+
 					average := averages[configKey]
 					average.Hostname = bitaxe.Hostname
 					average.T += T
