@@ -4,14 +4,6 @@ import (
 	"math"
 )
 
-type Average struct {
-	Score      float64
-	Efficiency float64
-	HashRate   float64
-	Temp       float64
-	Count      float64
-}
-
 func TemperatureScore(info Info) float64 {
 	score := 65 / info.Temp
 	return score
