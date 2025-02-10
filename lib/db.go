@@ -1,11 +1,14 @@
 package lib
 
 import (
+	"time"
+
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 type Config struct {
+	UpdatedAt   time.Time
 	Hostname    string
 	MacAddr     string `gorm:"primaryKey"`
 	Frequency   int    `gorm:"primaryKey"`
@@ -40,6 +43,7 @@ func InitDB() {
 
 func StoreAverages(averages map[ConfigKey]Config) {
 	for key, average := range averages {
+		average.UpdatedAt = time.Now()
 		average.MacAddr = key.MacAddr
 		average.Frequency = key.Frequency
 		average.CoreVoltage = key.CoreVoltage
