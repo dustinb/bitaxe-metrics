@@ -48,9 +48,9 @@ func StartMetrics() {
 func Measure(hostname string, info Info) {
 	metrics.coreVoltage.WithLabelValues(hostname).Set(float64(info.CoreVoltage))
 	metrics.hashRate.WithLabelValues(hostname).Set(info.HashRate)
-	metrics.expectedHashRate.WithLabelValues(hostname).Set(ExpectedHashRate(info))
+	metrics.expectedHashRate.WithLabelValues(hostname).Set(info.ExpectedHashRate)
 	metrics.efficiency.WithLabelValues(hostname).Set(info.Power / (info.HashRate / 1000))
-	metrics.expectedEfficiency.WithLabelValues(hostname).Set(info.Power / (ExpectedHashRate(info) / 1000))
+	metrics.expectedEfficiency.WithLabelValues(hostname).Set(info.Power / (info.ExpectedHashRate / 1000))
 	metrics.frequency.WithLabelValues(hostname).Set(float64(info.Frequency))
 	metrics.power.WithLabelValues(hostname).Set(info.Power)
 	metrics.temp.WithLabelValues(hostname).Set(info.Temp)

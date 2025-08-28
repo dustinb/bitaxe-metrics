@@ -15,7 +15,6 @@ import (
 type Info struct {
 	ASICModel         string  `json:"ASICModel"`
 	AutoFanSpeed      bool    `json:"autoFanSpeed"`
-	AsicCount         int     `json:"asicCount"`
 	BestDifficulty    string  `json:"bestDifficulty"`
 	BoardVersion      string  `json:"boardVersion"`
 	CoreVoltage       int     `json:"coreVoltage"`
@@ -26,6 +25,7 @@ type Info struct {
 	FreeHeap          int     `json:"freeHeap"`
 	Frequency         int     `json:"frequency"`
 	HashRate          float64 `json:"hashRate"`
+	ExpectedHashRate  float64 `json:"expectedHashRate"`
 	Hostname          string  `json:"hostname"`
 	MacAddr           string  `json:"macAddr"`
 	OverHeatMode      bool    `json:"overheat_mode"`
